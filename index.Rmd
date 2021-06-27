@@ -1,0 +1,151 @@
+---
+title: "Datos primates"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(ggplot2)
+library(graphics)
+library(plotly)
+library(dbplyr)
+library(dplyr)
+library(DT)
+library(leaflet)
+library(sf)
+library(raster)
+library(tidyverse)
+library(PASWR2)
+library(spData)
+library(rgdal)
+```
+
+## Datos sobre primates. 
+
+
+```{r}
+inp<- 
+  read.csv("primates-cr-registros.csv", sep = "\t")
+
+```
+
+## Datos de registros en la Tabla. 
+```{r}
+inp %>%
+  dplyr::select(family,
+         species,stateProvince,
+         locality,eventDate) %>%
+  DT::datatable(
+    colnames = c("Familia", "Especie","Provincia","Localidad", "Fecha"),
+    rownames = FALSE,
+    options = list(
+      searchHighlight = TRUE,
+      language= list(url = '//cdn.datatables.net/plug-ins/1.10.11/i18n/Spanish.json'),
+      pageLength = 15))
+  
+```
+
+# Grafico de pastel sobre registros de las Especies 
+
+```{r}
+
+primates <- inp[,c('species', 'eventDate')]
+data <-primates %>%
+  group_by(especies = format(species)) %>%
+  summarize(suma_registros = n())
+
+data$suma_registros<- as.numeric(data$suma_registros)
+
+plot_ly(data, labels = ~especies, values = ~suma_registros, 
+        type = 'pie') %>% config(locale= "es") %>% 
+  layout(title = "Grafico Registros de Especies")
+
+```
+
+#Filtro de datos
+```{r}
+AP<-filter(inp, species == "Alouatta palliata")
+CC<-filter(inp, species == "Cebus capucinus")
+AG<-filter(inp, species == "Ateles geoffroyi")
+S<-filter(inp, species == "Saimiri oerstedii")
+```
+
+
+# MAPA 
+
+```{r}
+#Lectura de una archivo CSV con columnas de coordenadas
+inp1 <-
+  st_read(
+    "primates-cr-registros.csv",
+    options = c(
+      "X_POSSIBLE_NAMES=decimalLongitude",
+      "Y_POSSIBLE_NAMES=decimalLatitude"),
+    quiet = TRUE)
+
+# Asignación del sistema de coordenadas
+
+st_crs(inp1) = 4326
+
+```
+
+
+```{r}
+# Mapeo
+mapa <- inp1 %>%
+  dplyr::select(family,
+         species, stateProvince,
+         locality,
+         eventDate) %>%
+  leaflet() %>%
+  addProviderTiles(providers$OpenStreetMap.Mapnik, group = "OpenStreetMap") %>%
+  addProviderTiles(providers$Esri.WorldImagery, group = "Imágenes de ESRI") %>%
+  addCircleMarkers(
+    stroke = F,
+    radius = 2,
+fillColor = 'red',
+    fillOpacity = 1,
+    popup = paste(
+      inp$family,
+      inp1$species,
+      inp1$stateProvince,
+      inp1$locality,
+      inp1$eventDate,
+      sep = '<br/>'),
+    group = "species") %>% addLayersControl(
+      baseGroups = c("OpenStreetMap", "Imágenes de ESRI"),
+      overlayGroups = c("primates")) %>%
+  addMiniMap(
+    tiles = providers$Stamen.OpenStreetMap.Mapnik,
+    position = "bottomleft",
+    toggleDisplay = TRUE)
+```
+
+```{r}
+# 
+alt <- getData(
+    "worldclim",
+    var = "alt",
+    res = .5,
+    lon = -84,
+    lat = 10)
+  
+  altitud <- crop(alt, extent(-86, -82.3, 8, 11.3))
+  
+pal <- colorNumeric(
+  c("#006400", "#FFFF00", "#0000FF"), 
+  values(altitud), 
+  na.color = "transparent")
+      
+  
+```
+
+
+```{r, message=FALSE}
+mapa %>%
+  addRasterImage(
+    altitud, 
+    colors = pal, 
+    opacity = 0.8) %>% addLayersControl(
+      baseGroups = c("OpenStreetMap","Imágenes de ESRI","Worldclim"))
+```
+
